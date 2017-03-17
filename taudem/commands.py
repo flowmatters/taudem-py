@@ -165,15 +165,15 @@ class TaudemCommand(object):
 
 				read_full_results = kwargs.get('as_array',True)
 
-				results = [o.read_result(read_full_results) for o,_ in output_params]
+				results = [o.read_result(read_full_results) for o,_ in output_params[::-1]]
 
 				if len(results) != 1:
 					return tuple(results)
 				return results[0]
 
 			finally:				
-				shutil.rmtree(working_dir)
 				os.chdir(save_dir)
+				shutil.rmtree(working_dir)
 
 			print(os.getcwd())
 
