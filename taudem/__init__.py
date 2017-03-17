@@ -1,6 +1,6 @@
 
 from . import commands as _commands
-import settings
+from . import settings
 
 _me = __import__(__name__)
 for c in _commands.commands:
