@@ -2,11 +2,7 @@
 import numpy as _np
 import osgeo.gdal as _gd
 from . import settings
-#_NUMPY_TO_GDAL_TYPES={_np.dtype(v):k for k,v in _gd.array_modes.items()}
-_NUMPY_TO_GDAL_TYPES={
-	_np.dtype('f'):_gd.GDT_Float32,
-	_np.dtype('d'):_gd.GDT_Float64
-}
+from .utils import to_geotiff,to_point_shp
 
 class TaudemCommandArgument(object):
 	def __init__(self,name,flag=None,optional=False,type='inputgrid',pass_to_program=False):
@@ -31,58 +27,60 @@ class TaudemCommandArgument(object):
 	def help_text(self):
 		return '%s: %s (%s)'%(self.name,self.type_text(),'optional' if self.optional else 'required')
 
-	def generate(self,value):
+	def generate(self,value,transform):
 		'''
 		Ready `value` for passing to the program and return command line text
 
 		May involve writing a grid to disk.
 		'''
 		import numpy as np
-		if self.type=='inputgrid':
+		if self.type.endswith('grid'):
 			fn = self.flag or self.name
 			fn += '.tif'
 
-			transform = (1.0,0.001,0.0,1.0,0.0,-0.001)
+			if self.type.startswith('input'):
+				transform = transform or (1.0,0.001,0.0,1.0,0.0,-0.001)
 
-			# write to disk
-			if hasattr(value,'GetRasterBand'):
-				transform = value.GetGeoTransform()
-				value = value.GetRasterBand(1)
+				# write to disk
+				if hasattr(value,'GetRasterBand'):
+					transform = value.GetGeoTransform()
+					value = value.GetRasterBand(1)
 
-			if hasattr(value,'ReadAsArray'):
-				value = value.ReadAsArray()
+				if hasattr(value,'ReadAsArray'):
+					value = value.ReadAsArray()
 
-			if np.size(value) <= 1:
-				# Not an array.
-				raise Exception('Invalid parameter: %s',self.name)
+				if np.size(value) <= 1:
+					# Not an array.
+					raise Exception('Invalid parameter: %s',self.name)
 
-			driver = _gd.GetDriverByName('GTiff')
-			outRaster = driver.Create(fn, value.shape[1], value.shape[0], 1, _NUMPY_TO_GDAL_TYPES[value.dtype])
-			outRaster.SetGeoTransform(transform)
-			outband = outRaster.GetRasterBand(1)
-			outband.WriteArray(value)
-#			outRasterSRS = osr.SpatialReference()
-#			outRasterSRS.ImportFromEPSG(4326)
-#			outRaster.SetProjection(outRasterSRS.ExportToWkt())
-			outband.FlushCache()
+				to_geotiff(value,transform,fn)
 
 			return ('-%s %s'%(self.flag,fn)) if self.flag else fn
 
-		if self.type=='outputgrid':
-			fn = self.flag or self.name
-			fn += '.tif'
-
-			return ('-%s %s'%(self.flag,fn)) if self.flag else fn
-
-		if self.type=='inputshp':
+		if self.type.endswith('shp'):
 			fn = self.flag or self.name
 			fn += '.shp'
 
-			# write to disk
+			if self.type.startswith('input'):
+				# write to disk
+				to_point_shp(value,fn)
 
 			return ('-%s %s'%(self.flag,fn)) if self.flag else fn
 
-		return '-%s'%self.flag
+		if self.type=='outputtxt':
+			fn = self.flag or self.name
+			fn += '.txt'
+
+			return '-%s %s'%(self.flag,fn)
+
+		if self.type=='flag':
+			if value:
+				return '-%s'%self.flag
+
+		if self.type=='value':
+			return '-%s %s'%(self.flag,str(value))
+
+		raise Exception("Can't process argument: %s"%self.name)
 
 	def read_result(self,as_array):
 		if self.type=='outputgrid':
@@ -93,6 +91,18 @@ class TaudemCommandArgument(object):
 			band = ds.GetRasterBand(1)
 			arr = ds.ReadAsArray()
 			return arr
+
+		if self.type=='outputshp':
+			import geopandas as gpd
+			fn = self.flag or self.name
+			fn += '.shp'
+
+			return gpd.read_file(fn)
+
+		if self.type=='outputtxt':
+			fn = self.flag or self.name
+			fn += '.txt'
+			return open(fn,'r').read()
 
 		raise Exception("Can't read output: %s"%self.name)
 
@@ -107,6 +117,7 @@ class TaudemCommand(object):
 		self.name = name
 		self.arguments = arguments
 		self.arguments.append(TaudemCommandArgument('as_array',type='boolean',pass_to_program=False,optional=True))
+		self.arguments.append(TaudemCommandArgument('geotransform',type='geotransform',pass_to_program=False,optional=True))
 
 	def generate(self):
 		import tempfile
@@ -116,6 +127,7 @@ class TaudemCommand(object):
 		def result(*args,**kwargs):
 			cmd_args = []
 			available_args = self.arguments[::-1]
+			transform = kwargs.get('geotransform',None)
 
 			for a in args:
 				try:
@@ -129,9 +141,11 @@ class TaudemCommand(object):
 					if not _match_arg(k,self.arguments):
 						raise Exception('unknown argument: %s'%k)
 					raise Exception('argument provided by position and keyword: '%k)
-				cmd_args.append(a,v)
+				cmd_args.append((a,v))
+				available_args.remove(a)
 
 			output_params = [(a,None) for a in available_args if a.type.startswith('output')]
+
 			missing = []
 			for a in available_args:
 				if a.type.startswith('output'):
@@ -145,6 +159,13 @@ class TaudemCommand(object):
 			print('args',cmd_args)
 			print('outputs',output_params)
 
+			if transform is None:
+				for a,v in cmd_args:
+					if a.type=='inputgrid' and hasattr(v,'GetGeoTransform'):
+						print('Not Geotransform provided. Using geotransform from %s'%a.name)
+						transform = v.GetGeoTransform()
+						break
+
 			working_dir = tempfile.mkdtemp(prefix='taudem_')
 			save_dir = os.getcwd()
 			print(os.getcwd())
@@ -152,16 +173,16 @@ class TaudemCommand(object):
 				all_args = cmd_args + output_params
 				os.chdir(working_dir)
 				print(os.getcwd())
-				cmd = '%s %s%s %s'%(settings.mpi_cmd(), settings.TAUDEM_PATH, self.name,' '.join([a.generate(v) for a,v in all_args]))
+				cmd = '%s %s%s %s'%(settings.mpi_cmd(), settings.TAUDEM_PATH, self.name,' '.join([a.generate(v,transform) for a,v in all_args]))
 
 				from glob import glob
-				print(glob('%s/*'%working_dir))
+				print('\nFiles Before:\n'+ '\n'.join(glob('%s/*'%working_dir))+'\n')
 
 				print('command line:',cmd)
 
 				os.system(cmd)
 
-				print(glob('%s/*'%working_dir))
+				print('\nFiles After:\n'+ '\n'.join(glob('%s/*'%working_dir))+'\n')
 
 				read_full_results = kwargs.get('as_array',True)
 
@@ -173,8 +194,8 @@ class TaudemCommand(object):
 
 			finally:				
 				os.chdir(save_dir)
-				shutil.rmtree(working_dir)
-
+				#shutil.rmtree(working_dir)
+				print("\n******* Don't forget to remove contents of %s\n\n"%working_dir)
 			print(os.getcwd())
 
 
@@ -220,4 +241,42 @@ aread8 = TaudemCommand('aread8',[
 		TaudemCommandArgument('nc','nc',type='flag',optional=True)
 	])
 
-commands=[fillpits,d8p,aread8]
+threshold = TaudemCommand('threshold',[
+		TaudemCommandArgument('input','fel'),
+		TaudemCommandArgument('output','ss',type='outputgrid'),
+		TaudemCommandArgument('thresholdvalue','thresh',type='value'),
+		TaudemCommandArgument('mask','mask',optional=True)
+	])
+
+streamnet = TaudemCommand('streamnet',[
+		TaudemCommandArgument('d8pointer','p'),
+		TaudemCommandArgument('filled_dem','fel',optional=True),
+		TaudemCommandArgument('upstreamareagrid','ad8'),
+		TaudemCommandArgument('stream_raster','src'),
+		TaudemCommandArgument('outlets','o',type='inputshp',optional=True),
+
+		TaudemCommandArgument('treefile','tree',type='outputtxt'),
+		TaudemCommandArgument('dn','dn',type='value',optional=True),
+
+		TaudemCommandArgument('watersheds','w',type='outputgrid'),
+		TaudemCommandArgument('streams','net',type='outputshp'),
+		TaudemCommandArgument('network_coords','coord',type='outputtxt'),
+		TaudemCommandArgument('network_order','ord',type='outputgrid')
+	])
+
+gagewatershed = TaudemCommand('gagewatershed',[
+		TaudemCommandArgument('d8pointer','p'),
+		TaudemCommandArgument('outlets','o',type='inputshp'),
+		TaudemCommandArgument('gagewatersheds','gw',type='outputgrid'),
+		TaudemCommandArgument('connectivity','id',type='outputtxt')
+	])
+
+moveoutletstostrm = TaudemCommand('moveoutletstostrm',[
+		TaudemCommandArgument('d8pointer','p'),
+		TaudemCommandArgument('stream_raster','src'),
+		TaudemCommandArgument('outlets','o',type='inputshp'),
+		TaudemCommandArgument('outlets_moved','om',type='outputshp'),
+		TaudemCommandArgument('max_dist','md',type='value',optional=True)
+	])
+
+commands=[fillpits,d8p,aread8,threshold,streamnet,gagewatershed,moveoutletstostrm]
