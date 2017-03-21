@@ -1,7 +1,7 @@
 
 from . import commands as _commands
 from . import settings
-from utils import to_geotiff
+from .utils import to_geotiff
 
 _me = __import__(__name__)
 for c in _commands.commands:

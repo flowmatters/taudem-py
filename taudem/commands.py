@@ -114,7 +114,13 @@ def _match_arg(name,args):
 
 class TaudemCommand(object):
 	def __init__(self,name,arguments):
-		self.name = name
+		if type(name)==list:
+			self.name = name[0]
+			self.alternative_names = name
+		else:
+			self.name = name
+			self.alternative_names = None
+
 		self.arguments = arguments
 		self.arguments.append(TaudemCommandArgument('as_array',type='boolean',pass_to_program=False,optional=True))
 		self.arguments.append(TaudemCommandArgument('geotransform',type='geotransform',pass_to_program=False,optional=True))
@@ -173,7 +179,15 @@ class TaudemCommand(object):
 				all_args = cmd_args + output_params
 				os.chdir(working_dir)
 				print(os.getcwd())
-				cmd = '%s %s%s %s'%(settings.mpi_cmd(), settings.TAUDEM_PATH, self.name,' '.join([a.generate(v,transform) for a,v in all_args]))
+				if self.alternative_names:
+					for opt in self.alternative_names:
+						executable = '%s%s%s'%(settings.TAUDEM_PATH, opt,settings.SUFFIX)
+						if os.path.exists(executable):
+							break
+				else:
+					executable = '%s%s%s'%(settings.TAUDEM_PATH, self.name,settings.SUFFIX)
+
+				cmd = '%s %s %s'%(settings.mpi_cmd(), executable,' '.join([a.generate(v,transform) for a,v in all_args]))
 
 				from glob import glob
 				print('\nFiles Before:\n'+ '\n'.join(glob('%s/*'%working_dir))+'\n')
@@ -271,7 +285,7 @@ gagewatershed = TaudemCommand('gagewatershed',[
 		TaudemCommandArgument('connectivity','id',type='outputtxt')
 	])
 
-moveoutletstostrm = TaudemCommand('moveoutletstostrm',[
+moveoutletstostrm = TaudemCommand(['moveoutletstostrm','MoveOutletsToStreams'],[
 		TaudemCommandArgument('d8pointer','p'),
 		TaudemCommandArgument('stream_raster','src'),
 		TaudemCommandArgument('outlets','o',type='inputshp'),
