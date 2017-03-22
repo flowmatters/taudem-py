@@ -29,19 +29,31 @@ class TaudemCommandArgument(object):
     def help_text(self):
         return '%s: %s (%s)'%(self.name,self.type_text(),'optional' if self.optional else 'required')
 
-    def generate(self,value,transform):
+    def get_flag(self,val):
+        return  ('-%s %s'%(self.flag,val)) if self.flag else val
+
+    def generate(self,value,transform,prev_dir):
         '''
         Ready `value` for passing to the program and return command line text
 
         May involve writing a grid to disk.
         '''
         import numpy as np
+        import os
         if self.type.endswith('grid'):
             fn = self.flag or self.name
             fn += '.tif'
 
             if self.type.startswith('input'):
                 transform = transform or (1.0,0.001,0.0,1.0,0.0,-0.001)
+
+                if hasattr(value,'GetDescription'):
+                    possible_fn = value.GetDescription()
+                    if not os.path.isabs(possible_fn):
+                        possible_fn = os.path.join(prev_dir,possible_fn)
+
+                    if os.path.isfile(possible_fn):
+                        return self.get_flag(possible_fn)
 
                 # write to disk
                 if hasattr(value,'GetRasterBand'):
@@ -57,7 +69,7 @@ class TaudemCommandArgument(object):
 
                 to_geotiff(value,transform,fn)
 
-            return ('-%s %s'%(self.flag,fn)) if self.flag else fn
+            return self.get_flag(fn)
 
         if self.type.endswith('shp'):
             fn = self.flag or self.name
@@ -67,7 +79,7 @@ class TaudemCommandArgument(object):
                 # write to disk
                 to_point_shp(value,fn)
 
-            return ('-%s %s'%(self.flag,fn)) if self.flag else fn
+            return self.get_flag(fn)
 
         if self.type=='outputtxt':
             fn = self.flag or self.name
@@ -167,23 +179,17 @@ class TaudemCommand(object):
             if len(missing):
                 raise Exception('Missing required argument(s): %s'%missing)
 
-#           print('args',cmd_args)
-#           print('outputs',output_params)
-
             if transform is None:
                 for a,v in cmd_args:
                     if a.type=='inputgrid' and hasattr(v,'GetGeoTransform'):
-#                       print('No Geotransform provided. Using geotransform from %s'%a.name)
                         transform = v.GetGeoTransform()
                         break
 
             working_dir = tempfile.mkdtemp(prefix='taudem_')
             save_dir = os.getcwd()
-#           print(os.getcwd())
             try:
                 all_args = cmd_args + output_params
                 os.chdir(working_dir)
-#               print(os.getcwd())
                 if self.alternative_names:
                     for opt in self.alternative_names:
                         executable = '%s%s%s'%(settings.TAUDEM_PATH, opt,settings.SUFFIX)
@@ -192,16 +198,11 @@ class TaudemCommand(object):
                 else:
                     executable = '%s%s%s'%(settings.TAUDEM_PATH, self.name,settings.SUFFIX)
 
-                cmd = '%s %s %s'%(settings.mpi_cmd(), executable,' '.join([a.generate(v,transform) for a,v in all_args]))
+                cmd = '%s %s %s'%(settings.mpi_cmd(), executable,' '.join([a.generate(v,transform,save_dir) for a,v in all_args]))
 
-#               from glob import glob
-#               print('\nFiles Before:\n'+ '\n'.join(glob('%s/*'%working_dir))+'\n')
-
-#               print('command line:',cmd)
+#                print('command line:',cmd)
 
                 os.system(cmd)
-
-#               print('\nFiles After:\n'+ '\n'.join(glob('%s/*'%working_dir))+'\n')
 
                 read_full_results = kwargs.get('as_array',True)
 
