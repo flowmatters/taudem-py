@@ -15,12 +15,12 @@ MPI_CMD='mpiexec'
 SUFFIX=''
 
 if platform.system()=='Windows':
-	SUFFIX='.exe'
+    SUFFIX='.exe'
 
 def mpi_cmd():
-	if not USE_MPI:
-		return ''
+    if not USE_MPI:
+        return ''
 
-	return '%s -n %d'%(os.path.join(MPI_PATH,MPI_CMD),MPI_PROCESSORS)
+    return '%s -n %d'%(os.path.join(MPI_PATH,MPI_CMD),MPI_PROCESSORS)
 
 
