@@ -3,7 +3,7 @@ import numpy as _np
 import osgeo.gdal as _gd
 import pandas as _pd
 from . import settings
-from .utils import to_geotiff,to_point_shp,which
+from .utils import to_geotiff,to_point_shp,which,MetadataArray
 
 class TaudemCommandArgument(object):
     def __init__(self,name,flag=None,optional=False,type='inputgrid',pass_to_program=False,columns=None):
@@ -104,7 +104,7 @@ class TaudemCommandArgument(object):
             ds = _gd.Open(fn)
             band = ds.GetRasterBand(1)
             arr = ds.ReadAsArray()
-            return arr
+            return MetadataArray(arr,no_data_value=band.GetNoDataValue())
 
         if self.type=='outputshp':
             import geopandas as gpd

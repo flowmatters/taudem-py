@@ -9,11 +9,29 @@ _NUMPY_TO_GDAL_TYPES={
     _np.dtype('int32'):_gd.GDT_Int32
 }
 
+class MetadataArray(_np.ndarray):
+
+    def __new__(cls, input_array, **kwargs):
+        # Input array is an already formed ndarray instance
+        # We first cast to be our class type
+        obj = _np.asarray(input_array).view(cls)
+        # add the new attribute to the created instance
+        obj.metadata = kwargs
+        # Finally, we must return the newly created object:
+        return obj
+
+    def __array_finalize__(self, obj):
+        # see InfoArray.__array_finalize__ for comments
+        if obj is None: return
+        self.metadata = getattr(obj, 'metadata', None)
+
 def to_geotiff(arr,gt,fn):
     driver = _gd.GetDriverByName('GTiff')
     outRaster = driver.Create(fn, arr.shape[1], arr.shape[0], 1, _NUMPY_TO_GDAL_TYPES[arr.dtype])
     outRaster.SetGeoTransform(gt)
     outband = outRaster.GetRasterBand(1)
+    if hasattr(arr,'metadata'):
+        outband.SetNoDataValue(arr.metadata.get('no_data_value',None))
     outband.WriteArray(arr)
 #           outRasterSRS = osr.SpatialReference()
 #           outRasterSRS.ImportFromEPSG(4326)
