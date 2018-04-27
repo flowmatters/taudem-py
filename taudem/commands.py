@@ -45,6 +45,9 @@ class TaudemCommandArgument(object):
             fn += '.tif'
 
             if self.type.startswith('input'):
+                if isinstance(value,str):
+                    return self.get_flag(value)
+
                 transform = transform or (1.0,0.001,0.0,1.0,0.0,-0.001)
 
                 if hasattr(value,'GetDescription'):
