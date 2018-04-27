@@ -28,7 +28,10 @@ class MetadataArray(_np.ndarray):
 def to_geotiff(arr,gt,fn):
     driver = _gd.GetDriverByName('GTiff')
     outRaster = driver.Create(fn, arr.shape[1], arr.shape[0], 1, _NUMPY_TO_GDAL_TYPES[arr.dtype])
-    outRaster.SetGeoTransform(gt)
+    if gt is not None:
+        if hasattr(gt,'to_gdal'):
+            gt = gt.to_gdal()
+        outRaster.SetGeoTransform(gt)
     outband = outRaster.GetRasterBand(1)
     if hasattr(arr,'metadata'):
         outband.SetNoDataValue(arr.metadata.get('no_data_value',None))
