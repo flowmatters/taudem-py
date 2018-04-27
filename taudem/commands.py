@@ -68,7 +68,7 @@ class TaudemCommandArgument(object):
 
                 if np.size(value) <= 1:
                     # Not an array.
-                    raise Exception('Invalid parameter: %s',self.name)
+                    raise Exception('Invalid parameter: %s'%self.name)
 
                 to_geotiff(value,transform,fn)
 
