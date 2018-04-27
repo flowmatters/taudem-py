@@ -6,7 +6,7 @@ from . import settings
 from .utils import to_geotiff,to_point_shp,which,MetadataArray
 
 class TaudemCommandArgument(object):
-    def __init__(self,name,flag=None,optional=False,type='inputgrid',pass_to_program=False,columns=None):
+    def __init__(self,name,flag=None,optional=False,type='inputgrid',pass_to_program=True,columns=None):
         self.name = name
         self.flag = flag
         self.optional = optional
@@ -167,7 +167,9 @@ class TaudemCommand(object):
                     if not _match_arg(k,self.arguments):
                         raise Exception('unknown argument: %s'%k)
                     raise Exception('argument provided by position and keyword: '%k)
-                cmd_args.append((a,v))
+
+                if a.pass_to_program:
+                    cmd_args.append((a,v))
                 available_args.remove(a)
 
             output_params = [(a,None) for a in available_args if a.type.startswith('output')]
