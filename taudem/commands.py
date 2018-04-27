@@ -207,7 +207,9 @@ class TaudemCommand(object):
 
 #                print('command line:',cmd)
 
-                os.system(cmd)
+                res = os.system(cmd)
+                if res != 0:
+                    raise Exception("Failed to run commandline: %s"%cmd)
 
                 read_full_results = kwargs.get('as_array',True)
 
