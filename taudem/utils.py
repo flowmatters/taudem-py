@@ -1,6 +1,7 @@
-
+import os
 import numpy as _np
 import osgeo.gdal as _gd
+import shutil
 
 _NUMPY_TO_GDAL_TYPES={
     _np.dtype('f'):_gd.GDT_Float32,
@@ -59,6 +60,41 @@ def clip(raster,polygons,all_touched=True):
     masked = np.ma.MaskedArray(fsrc.arry,mask=np.logical_or(fsrc.array==fsrc.nodata,np.logical_not(coverage_rst)))
 
     return masked
+
+def to_polygons(raster,shp_fn=None,transform=None):
+    from osgeo import ogr
+    tmp=None
+    if not shp_fn or not isinstance(raster,str):
+        import tempfile
+        tmp = tempfile.mkdtemp(prefix='taudem_')
+
+    if not isinstance(raster,str):
+        tmp_fn = os.path.join(tmp,'raster.tif')
+        to_geotiff(raster,transform,tmp_fn)
+        raster = tmp_fn
+
+    if not shp_fn:
+        shp_fn = os.path.join(tmp,'polygons.shp')
+
+    try:
+        if os.path.exists(shp_fn):
+            os.remove(shp_fn)
+        drv = ogr.GetDriverByName("ESRI Shapefile")
+        dst_ds = drv.CreateDataSource( shp_fn )
+        dst_layer = dst_ds.CreateLayer(os.path.basename(shp_fn)[:-4], srs = None )
+        newField = ogr.FieldDefn('GRIDCODE', ogr.OFTInteger)
+        dst_layer.CreateField(newField)
+
+        coverage = _gd.Open(raster)
+        band = coverage.GetRasterBand(1)
+        result = _gd.Polygonize( band, band.GetMaskBand(), dst_layer, 0, [], callback=None )
+        dst_ds.SyncToDisk()
+
+        if tmp:
+            import geopandas as gpd
+            return gpd.read_file(shp_fn)
+    finally:
+        if tmp:shutil.rmtree(tmp)
 
 # from http://stackoverflow.com/a/377028
 def which(program):
