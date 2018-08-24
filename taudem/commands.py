@@ -307,7 +307,8 @@ moveoutletstostrm = TaudemCommand(['moveoutletstostrm','MoveOutletsToStreams'],[
         TaudemCommandArgument('stream_raster','src'),
         TaudemCommandArgument('outlets','o',type='inputshp'),
         TaudemCommandArgument('outlets_moved','om',type='outputshp'),
-        TaudemCommandArgument('max_dist','md',type='value',optional=True)
+        TaudemCommandArgument('max_dist','md',type='value',optional=True),
+        TaudemCommandArgument('output_layername','omlyr',optional=True)
     ])
 
 commands=[fillpits,d8p,aread8,threshold,streamnet,gagewatershed,moveoutletstostrm]
